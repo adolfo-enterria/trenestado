@@ -27,6 +27,10 @@ only while the server is running.
 - `docs/free-tier.md` how to run it on free plans (Supabase + Cloudflare)
 - `supabase/schema.sql` database schema to run in the Supabase SQL editor
 
+Track geometry comes from OpenStreetMap (© OpenStreetMap contributors, ODbL) and is prebuilt in
+`assets/rail.json`. To rebuild it: `npm run rail:fetch` (downloads to `data/`, needs the public Overpass API)
+then `npm run rail:build`.
+
 `LIVE_SECONDS=15 npm start` polls Renfe more often locally (default 60 s, the free-tier setting).
 
 ## Data

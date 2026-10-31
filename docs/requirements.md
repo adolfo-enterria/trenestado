@@ -211,6 +211,40 @@ Status of each source (ok / error / last success / last error), what each provid
 
 ---
 
+## 2.12 Feedback round 1 (2026-10-31)
+- [x] **Incidencias** gets its own tab (map + list of incidents, Adif and detected), instead of a panel
+      under the map. The map tab keeps only a compact indicator linking to it.
+- [x] **Own visual identity**: the UI must not look like Vía libre (currently it reuses its layout,
+      palette and panels). Redesign the look and layout while keeping every feature; dark and light themes,
+      mobile first, accessible.
+- [x] **Realistic track geometry**: lines between stations are often straight (we join consecutive GTFS
+      stops; Madrid–Zaragoza HSL is one 300 km segment). Vía libre looks better because it learns the network
+      from train GPS trails (~1,600 short segments that grow over time). We use real track geometry from
+      OpenStreetMap (`railway=rail`, main/branch lines, simplified, © OpenStreetMap contributors, ODbL),
+      and route incident sections and train routes along it instead of drawing straight lines.
+      Result: 98 % of consecutive-stop pairs (1,395 / 1,422) follow real track. Build: `npm run rail:fetch`
+      (one-time Overpass download) + `npm run rail:build` → `assets/rail.json` (7 MB, committed). The build
+      merges nodes < 12 m apart (OSM maps each track of a double-track line separately) and bridges dead ends
+      < 250 m (breaks at stations). Incident sections pick the best of several candidate tracks near each
+      named place (places are town centres, often km away from the line).
+
+## 2.13 Feedback round 2 (2026-10-31)
+- [x] **Descargar datos** page (`#/datos`): choose dataset (recorridos, líneas por día, incidencias,
+      proximidad, horas), time window (presets + custom dates), network/type filters, CSV (Excel-ready, UTF-8
+      BOM) or JSON. API: `GET /api/export/info`, `GET /api/export?datos=&desde=&hasta=&formato=&red=&tipos=`,
+      streamed row by row. Production: see docs/free-tier.md §7 (pre-built files on R2, not Supabase egress).
+- [x] **Hamburger menu** (left drawer) instead of top tabs — better on phones.
+- [x] **Zone filter also filters the map** (Madrid, Cataluña…), not only the delayed-arrivals list.
+- [x] **Findable villages**: basemap with place names (OpenFreeMap vector tiles via MapLibre, free, no key)
+      and search returns municipalities ("Lugares") → fly there and list nearby trains and stations.
+- [x] **Cercanías itineraries**: Renfe's Cercanías GTFS is 16 MB zipped but 288 MB / 1.9 M stop times
+      unzipped (each trip listed per service day). We stream it and keep only today's and tomorrow's trips
+      (~7,700 trips, ~105k stop times, 125 MB RSS, 2 s). All live Cercanías trains match a trip; their routes use
+      the GTFS line shapes.
+- [ ] **Metro de Madrid**: not feasible in real time — Metro/CRTM publish only the scheduled GTFS (no train
+      positions or delays). Option for later: a clearly labelled "according to timetable" layer simulated from
+      the GTFS, or per-station next-train times if an official source appears.
+
 ## 3. Storage & the time-window question
 
 **Yes, `1A`/YTD windows are doable without blowing up storage** — as long as we never keep raw

@@ -5,10 +5,12 @@ import { typeOf, productName } from "./products.js";
 import { gtfs, loadGtfs, tripFor, scheduledOn, madridDate, madridMinutes } from "./sources/gtfs-static.js";
 import { fetchFleet, fetchCercanias, fetchCercaniasLines, fetchTripUpdatesLD, fetchRenfeAlerts, fetchGtfsRtAlerts } from "./sources/renfe.js";
 import { fetchAdif } from "./sources/adif.js";
+import { loadCercaniasGtfs } from "./sources/gtfs-cercanias.js";
 import { lineKey } from "./lines.js";
 import { state, sourceOk, sourceFail } from "./state.js";
 import { stmts, tx, cleanup, meta } from "./db.js";
 import { nearestStationKm, derivedIncidents, proximityAnomalies } from "./detect.js";
+import { routePoints } from "./rail.js";
 
 const hhmm = (min) => (min == null ? null : String(Math.floor(min / 60) % 24).padStart(2, "0") + ":" + String(min % 60).padStart(2, "0"));
 const yesterday = () => madridDate(new Date(Date.now() - 86400_000));
@@ -31,7 +33,7 @@ function tripOf(n) {
 
 // ---------- Live fleets (LD/MD + Cercanías) ----------
 // Speed/heading from consecutive fixes. Returns the track record for this train id.
-function updateTrack(id, lat, lon, ts, now) {
+function updateTrack(id, lat, lon, ts, now, maxKmh = 320) {
   let tr = state.track.get(id);
   if (!tr) { tr = { lat, lon, ts, kmh: null, heading: null, vlat: 0, vlon: 0 }; state.track.set(id, tr); }
   else if (ts > tr.ts) {
@@ -39,7 +41,7 @@ function updateTrack(id, lat, lon, ts, now) {
     if (dt >= 10 && dt <= 300) {
       const km = haversineKm(tr.lat, tr.lon, lat, lon);
       const kmh = (km / dt) * 3600;
-      if (kmh <= 320) { // Spain's commercial maximum is 310 km/h; above that it's GPS jitter
+      if (kmh <= maxKmh) { // above the line's top speed (310 km/h HSL, 160 km/h Cercanías) it's GPS/feed jitter
         tr.kmh = tr.kmh == null ? kmh : 0.6 * kmh + 0.4 * tr.kmh;
         if (km > 0.03) tr.heading = bearingDeg(tr.lat, tr.lon, lat, lon);
         const moving = tr.kmh >= STOPPED.kmh;
@@ -102,7 +104,7 @@ function processCer(fleet, now, trains, present) {
     if (twin && (twin.ori === r.ori || twin.des === r.des || haversineKm(twin.lat, twin.lon, r.lat, r.lon) < 3)) continue;
     const id = "c" + r.n;
     present.add(id);
-    const tr = updateTrack(id, r.lat, r.lon, now, now);
+    const tr = updateTrack(id, r.lat, r.lon, now, now, 160); // fetch time stands in for the fix time: positions can jump
     tr.network = "cer";
     tr.runDate ??= madridDate();
     const stoppedMin = stoppedInfo(tr, now, r.ret);
@@ -111,7 +113,7 @@ function processCer(fleet, now, trains, present) {
     if (r.sig === r.des || r.act === r.des) tr.nearDest = true;
     const nucleoName = state.nucleos.get(r.nucleo) || "Cercanías";
     trains.set(id, {
-      id, n: r.n, network: "cer", p: null, type: "cer", nom: `Cercanías ${r.line}`.trim(), line: r.line, nucleo: r.nucleo, nucleoName,
+      id, n: r.n, network: "cer", p: null, type: "cer", nom: `Cercanías ${r.line}`.trim(), line: r.line, nucleo: r.nucleo, nucleoName, tripId: r.tripId,
       lat: r.lat, lon: r.lon, ts: now,
       kmh: tr.kmh == null ? null : Math.round(tr.kmh), heading: tr.heading == null ? null : Math.round(tr.heading),
       vlat: tr.vlat, vlon: tr.vlon,
@@ -271,7 +273,7 @@ function adifPath(i) {
     const m = txt.match(/entre (?:las estaciones de )?([A-ZÁÉÍÓÚÑ][\wáéíóúñü.' -]+?) y ([A-ZÁÉÍÓÚÑ][\wáéíóúñü.' -]+?)(?=[,.;:]| por | debido| a causa| en el | registran|$)/);
     if (!m) continue;
     const a = findPlace(m[1]), b = findPlace(m[2]);
-    if (a && b && haversineKm(a[0], a[1], b[0], b[1]) < 150) return [a, b];
+    if (a && b && haversineKm(a[0], a[1], b[0], b[1]) < 150) return routePoints(a, b);
   }
   return null;
 }
@@ -293,6 +295,7 @@ async function gtfsCycle() {
     await loadGtfs();
     sourceOk("gtfs", { stations: gtfs.stations.size, trips: gtfs.trips.size });
     try { const l = await fetchCercaniasLines(); state.nucleos = l.nucleos; state.cercaniasLines = l.geo; } catch (e) { console.warn("[cercanías] lines:", e.message); }
+    try { await loadCercaniasGtfs(); sourceOk("gtfsCercanias"); } catch (e) { sourceFail("gtfsCercanias", e); }
     recordScheduled();
   } catch (e) { sourceFail("gtfs", e); }
 }

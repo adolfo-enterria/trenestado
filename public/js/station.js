@@ -1,5 +1,5 @@
 // Station board (#/estacion/17000): departures/arrivals, LD/MD from the timetable + live delays, Cercanías from Renfe's board.
-import { $, esc, api, COL, nivel } from "./util.js";
+import { $, esc, api, retBadge } from "./util.js";
 
 let current = null, kind = "salidas", timer = null, onMap = null;
 
@@ -33,28 +33,29 @@ function render(d) {
   $("v-estacion").innerHTML = `
     <div class="tren-cab">
       <div><h1>${esc(d.nombre)}</h1><p class="sub">${esc(d.region || "")}</p></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <div class="filtros" role="group" aria-label="Panel">
-          <button data-k="salidas" class="${salidas ? "on" : ""}">Salidas</button>
-          <button data-k="llegadas" class="${salidas ? "" : "on"}">Llegadas</button>
+      <div class="acciones-cab">
+        <div class="filtros seg" role="group" aria-label="Panel">
+          <button data-k="salidas" class="${salidas ? "on" : ""}" aria-pressed="${salidas}">Salidas</button>
+          <button data-k="llegadas" class="${salidas ? "" : "on"}" aria-pressed="${!salidas}">Llegadas</button>
         </div>
         <button class="btn" id="estMapa">Ver en el mapa</button>
       </div>
     </div>
     <div class="card panel-est">
-      ${d.filas.length ? `<table class="tabla tablero">
-        <thead><tr><th>Hora</th><th>Tren</th><th>${salidas ? "Destino" : "Origen"}</th><th class="n">Vía</th><th>Estado</th></tr></thead>
+      ${d.filas.length ? `<div class="tabla-scroll"><table class="tabla tablero-est">
+        <caption class="vh">${salidas ? "Salidas" : "Llegadas"} de ${esc(d.nombre)} en las próximas 3 horas</caption>
+        <thead><tr><th scope="col">Hora</th><th scope="col">Tren</th><th scope="col">${salidas ? "Destino" : "Origen"}</th><th scope="col" class="n col-via">Vía</th><th scope="col">Estado</th></tr></thead>
         <tbody>${d.filas.map((f) => {
           const late = f.retraso != null && f.retraso >= 1;
-          const estado = f.estado === "cancelado" ? `<b style="color:var(--grave)">Cancelado</b>`
-            : late ? `<b style="color:${COL[nivel(f.retraso)]}">+${f.retraso} min</b>${ESTADO[f.estado] ? ` · ${ESTADO[f.estado]}` : ""}`
-            : f.retraso != null && f.retraso <= 0 && f.estado !== "programado" ? `<span style="color:var(--ok)">En hora</span>${ESTADO[f.estado] ? ` · ${ESTADO[f.estado]}` : ""}`
+          const estado = f.estado === "cancelado" ? `<span class="ret grave">Cancelado</span>`
+            : late ? `${retBadge(f.retraso, "+" + f.retraso + " min")}${ESTADO[f.estado] ? ` ${ESTADO[f.estado]}` : ""}`
+            : f.retraso != null && f.retraso <= 0 && f.estado !== "programado" ? `${retBadge(0)}${ESTADO[f.estado] ? ` ${ESTADO[f.estado]}` : ""}`
             : ESTADO[f.estado] || "";
           return `<tr class="${f.estado}">
-            <td class="hora">${late ? `<del>${f.hora}</del> ${f.est}` : f.hora}</td>
+            <td class="hora">${late ? `<del>${f.hora}</del><ins>${f.est}</ins>` : f.hora}</td>
             <td><a href="#/tren/${f.id}">${f.red === "cer" ? `<span class="linea">${esc(f.linea || "")}</span>` : esc(f.nom)} ${f.n}</a></td>
-            <td>${esc(f.otro)}</td><td class="n">${esc(f.via || "–")}</td><td>${estado}</td></tr>`;
-        }).join("")}</tbody></table>`
+            <td>${esc(f.otro)}</td><td class="n col-via">${esc(f.via || "–")}</td><td>${estado}</td></tr>`;
+        }).join("")}</tbody></table></div>`
       : `<p class="vacio-card">No hay ${salidas ? "salidas" : "llegadas"} en las próximas 3 horas.</p>`}
       <p class="nota">Próximas 3 horas. Larga y media distancia: horario de Renfe + retraso en directo${salidas ? "" : ""} (Renfe no publica la vía). ${cerNote}</p>
     </div>`;

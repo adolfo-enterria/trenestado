@@ -4,6 +4,7 @@ import { haversineKm, headingDiff } from "./geo.js";
 import { gtfs, tripFor, madridDate } from "./sources/gtfs-static.js";
 import { lineKey, shortName } from "./lines.js";
 import { state } from "./state.js";
+import { pathForStops } from "./rail.js";
 
 /** Distance (km) to the nearest station, equirectangular approximation (fine at this scale). */
 export function nearestStationKm(lat, lon) {
@@ -17,7 +18,7 @@ export function nearestStationKm(lat, lon) {
   return Math.sqrt(best) * 111.2;
 }
 
-const pathOf = (codes) => codes.map((c) => gtfs.stations.get(c)).filter(Boolean).map((s) => [s.lat, s.lon]);
+const pathOf = (codes) => pathForStops(codes); // follows the real track where known
 
 /** Incidents we can infer from the feeds themselves. */
 export function derivedIncidents(now = Date.now()) {

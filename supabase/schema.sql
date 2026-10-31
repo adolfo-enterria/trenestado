@@ -53,6 +53,18 @@ create table if not exists public.gtfs_trips (
   service_id   text not null
 );
 create index if not exists gtfs_trips_train on public.gtfs_trips (train);
+-- Cercanías trips share the table. Renfe's Cercanías GTFS is 288 MB unzipped (1.9 M stop times: one copy of
+-- each trip per service day), so the gtfs job loads only today's and tomorrow's trips (~105k stop times).
+alter table public.gtfs_trips add column if not exists network  text not null default 'ld' check (network in ('ld', 'cer'));
+alter table public.gtfs_trips add column if not exists line     text;         -- Cercanías line ('C4a')
+alter table public.gtfs_trips add column if not exists shape_id text;         -- Cercanías line shape
+alter table public.gtfs_trips add column if not exists run_date date;         -- Cercanías: the single date the trip runs
+create index if not exists gtfs_trips_network_train on public.gtfs_trips (network, train);
+
+create table if not exists public.gtfs_shapes (
+  shape_id     text primary key,
+  points       jsonb not null                    -- [[lat, lon], …] in order
+);
 
 create table if not exists public.gtfs_stop_times (
   trip_id      text not null references public.gtfs_trips (trip_id) on delete cascade,
@@ -246,7 +258,7 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'stations', 'gtfs_calendar', 'gtfs_calendar_dates', 'gtfs_trips', 'gtfs_stop_times', 'cercanias_lines',
+    'stations', 'gtfs_calendar', 'gtfs_calendar_dates', 'gtfs_trips', 'gtfs_stop_times', 'gtfs_shapes', 'cercanias_lines',
     'live_trains', 'cancellations', 'source_status', 'train_runs', 'daily_line_stats', 'scheduled_days',
     'hourly_stats', 'snapshots', 'incidents', 'proximity_events'
   ] loop
@@ -307,7 +319,7 @@ language sql stable as $$
          (case when p_kind = 'llegadas' then first_st.station else last_st.station end) as other_station,
          d.day
   from public.gtfs_stop_times st
-  join public.gtfs_trips t using (trip_id)
+  join public.gtfs_trips t on t.trip_id = st.trip_id and t.network = 'ld'
   join lateral (select station from public.gtfs_stop_times x where x.trip_id = st.trip_id order by seq asc limit 1) first_st on true
   join lateral (select station from public.gtfs_stop_times x where x.trip_id = st.trip_id order by seq desc limit 1) last_st on true
   cross join d cross join now_m

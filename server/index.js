@@ -4,14 +4,17 @@ import { createRequire } from "node:module";
 import * as topojson from "topojson-client";
 import { PORT, ROOT, EVERY } from "./config.js";
 import { TYPES, productName, typeOf } from "./products.js";
-import { REGIONS, ZONES } from "./geo.js";
+import { REGIONS, ZONES, searchMunicipalities } from "./geo.js";
 import { gtfs, tripFor, runsOn, normTrain, normCode, madridDate, madridMinutes } from "./sources/gtfs-static.js";
 import { fetchSalidas } from "./sources/renfe.js";
+import { cerTrip, cerRoute } from "./sources/gtfs-cercanias.js";
 import { shortName, lineKey, cityName } from "./lines.js";
 import { state, isCancelled, cancelledOn } from "./state.js";
 import { db, stmts } from "./db.js";
 import { computeStats, WINDOWS } from "./stats.js";
 import { startCollector } from "./collector.js";
+import { networkSegments, pathForStops } from "./rail.js";
+import { exportInfo, streamExport } from "./export.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -93,7 +96,7 @@ app.get("/api/tierra", (req, res) => res.set("Cache-Control", "public, max-age=8
 
 let redCache = null;
 app.get("/api/red", (req, res) => {
-  if (!redCache || redCache.v !== gtfs.loadedAt) redCache = { v: gtfs.loadedAt, d: gtfs.segments.map((s) => s.map((x) => Math.round(x * 1e4) / 1e4)) };
+  if (!redCache || redCache.v !== gtfs.loadedAt) redCache = { v: gtfs.loadedAt, d: networkSegments().map((s) => s.map((x) => Math.round(x * 1e4) / 1e4)) };
   res.set("Cache-Control", "public, max-age=3600").json(redCache.d);
 });
 
@@ -157,13 +160,35 @@ app.get("/api/tren/:id", (req, res) => {
   const base = { id, n, red: network, proximidad: state.proximity.filter((p) => p.follower === id || p.leader === id), historial };
 
   if (network === "cer") {
-    // No Cercanías timetable loaded (Renfe's Cercanías GTFS is 16 MB): live data only.
-    const status = live ? "circulando" : history.some((h) => h.service_date === madridDate()) ? "finalizado" : "sin-posicion";
+    // Cercanías timetable: today's and tomorrow's trips from Renfe's Cercanías GTFS (sources/gtfs-cercanias.js)
+    const trip = cerTrip(live?.tripId, n);
+    const nowMin = madridMinutes();
+    let status;
+    if (live) status = "circulando";
+    else if (!trip) status = history.some((h) => h.service_date === madridDate()) ? "finalizado" : "sin-posicion";
+    else if (nowMin < trip.stops[0].dep) status = "programado";
+    else if (nowMin > trip.stops.at(-1).arr + 15) status = "finalizado";
+    else status = "sin-posicion";
+    const delay = live?.ret ?? 0;
+    let passedIdx = -1;
+    if (trip && live) {
+      const iAct = trip.stops.findIndex((s) => s.code === live.ant);
+      passedIdx = live.ant === live.sig ? iAct - 1 : iAct;
+    } else if (trip) passedIdx = trip.stops.reduce((acc, s, i) => ((s.dep ?? s.arr) + delay < nowMin ? i : acc), -1);
+    const stops = trip ? trip.stops.map((s, i) => ({
+      code: s.code, n: shortName(s.code), full: gtfs.stations.get(s.code)?.name, lat: gtfs.stations.get(s.code)?.lat, lon: gtfs.stations.get(s.code)?.lon,
+      arr: hhmm(s.arr), dep: hhmm(s.dep),
+      est: hhmm((i === 0 ? s.dep : s.arr) == null ? null : (i === 0 ? s.dep : s.arr) + Math.max(0, delay)),
+      estado: i <= passedIdx ? "pasado" : live && (s.code === live.sig || (live.ant === live.sig && s.code === live.ant)) ? "siguiente" : "pendiente",
+    })) : [];
+    const nucleo = live?.nucleoName;
     return res.json({
-      ...base, product: null, nom: live?.nom || "Cercanías", tipo: "cer", linea: live?.lineKey || null, status, delay: live?.ret ?? 0,
+      ...base, product: null, nom: live?.nom || (trip ? `Cercanías ${trip.line}` : "Cercanías"), tipo: "cer",
+      linea: live?.lineKey || (trip ? trip.line : null), status, delay,
       live: live && { ...live, antN: shortName(live.ant), sigN: shortName(live.sig) },
-      origen: live && shortName(live.ori), destino: live && shortName(live.des),
-      stops: [], incidencias: [],
+      origen: trip ? shortName(trip.stops[0].code) : live && shortName(live.ori),
+      destino: trip ? shortName(trip.stops.at(-1).code) : live && shortName(live.des),
+      nucleo, stops, ruta: trip ? cerRoute(trip, gtfs.stations) : [], incidencias: [],
     });
   }
 
@@ -199,6 +224,7 @@ app.get("/api/tren/:id", (req, res) => {
     origen: trip ? shortName(trip.stops[0].code) : live && shortName(live.ori),
     destino: trip ? shortName(trip.stops.at(-1).code) : live && shortName(live.des),
     linea, stops,
+    ruta: trip ? pathForStops(trip.stops.map((s) => s.code)) : [],
     incidencias: incidentsOut().filter((i) => i.trains?.includes(n) || (linea && i.scope === linea)),
   });
 });
@@ -282,7 +308,7 @@ app.get("/api/estacion/:code", async (req, res) => {
 const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 app.get("/api/buscar", (req, res) => {
   const raw = String(req.query.q || "").trim().slice(0, 60);
-  if (!raw) return res.json({ trenes: [], estaciones: [] });
+  if (!raw) return res.json({ trenes: [], estaciones: [], lugares: [] });
   const digits = raw.replace(/\D/g, "");
   const trenes = [];
   if (digits.length >= 2) {
@@ -318,7 +344,7 @@ app.get("/api/buscar", (req, res) => {
       estaciones.push({ code: s.code, n: s.name, reg: s.regionName, lat: s.lat, lon: s.lon, ahora: n });
     }
   }
-  res.json({ trenes, estaciones });
+  res.json({ trenes, estaciones, lugares: digits.length >= 2 && digits.length === raw.replace(/\s/g, "").length ? [] : searchMunicipalities(raw) });
 });
 
 app.get("/api/stats", (req, res) => {
@@ -329,11 +355,16 @@ app.get("/api/stats", (req, res) => {
   catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
+app.get("/api/export/info", (req, res) => res.json(exportInfo()));
+app.get("/api/export", streamExport);
+
 app.get("/api/fuentes", (req, res) => res.json({ fuentes: state.sources, gtfs: { cargado: gtfs.loadedAt, estaciones: gtfs.stations.size, viajes: gtfs.trips.size } }));
 
 app.use(express.static(path.join(ROOT, "public"), { extensions: ["html"] }));
 app.use("/vendor/leaflet", express.static(path.join(ROOT, "node_modules/leaflet/dist")));
 app.use("/vendor/chart.js", express.static(path.join(ROOT, "node_modules/chart.js/dist")));
+app.use("/vendor/maplibre-gl", express.static(path.join(ROOT, "node_modules/maplibre-gl/dist")));
+app.use("/vendor/maplibre-gl-leaflet", express.static(path.join(ROOT, "node_modules/@maplibre/maplibre-gl-leaflet")));
 
 app.listen(PORT, () => console.log(`trenestado → http://localhost:${PORT} (datos cada ${EVERY.live / 1000} s)`));
 startCollector().catch((e) => console.error("collector failed to start:", e));

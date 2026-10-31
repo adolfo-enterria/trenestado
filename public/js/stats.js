@@ -1,14 +1,21 @@
 // Estadísticas tab: filters → /api/stats → KPIs, charts, rankings.
-import { $, esc, api, store, fmt, fechaHora, TYPE_NAME } from "./util.js";
+import { $, esc, api, store, fmt, fechaHora, TYPE_NAME, COL, onTema } from "./util.js";
 
 const WIN_LABEL = { now: "Ahora", "1D": "1D", "7D": "7D", "1M": "1M", "3M": "3M", "6M": "6M", "1A": "1A", YTD: "YTD" };
 let BASE = null, f = store.get("statsFiltros", { w: "1D", tipos: [], region: "" });
 const charts = {};
-let inited = false, timer = null;
+let inited = false, timer = null, ultimo = null;
 
-Chart.defaults.color = "#94A6B6";
-Chart.defaults.borderColor = "#2A3946";
-Chart.defaults.font.family = "system-ui, -apple-system, Segoe UI, sans-serif";
+// Chart.js draws on canvas: colours come from the CSS tokens (COL) and charts are rebuilt on theme change.
+function estiloCharts() {
+  Chart.defaults.color = COL.texto2;
+  Chart.defaults.borderColor = COL.rejilla;
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.font.size = 12.5;
+}
+estiloCharts();
+onTema(() => { estiloCharts(); if (ultimo && !$("v-stats").hidden) render(ultimo); });
+const alfa = (hex, a) => hex + Math.round(a * 255).toString(16).padStart(2, "0");
 
 export async function showStats(base) {
   BASE = base;
@@ -20,8 +27,8 @@ export async function showStats(base) {
 
 function init() {
   inited = true;
-  $("fVentana").innerHTML = BASE.windows.map((w) => `<button data-w="${w}">${WIN_LABEL[w] || w}</button>`).join("");
-  $("fTipos").innerHTML = `<button data-t="">Todos</button>` + BASE.types.filter((t) => !t.noData).map((t) => `<button data-t="${t.id}">${t.name}</button>`).join("");
+  $("fVentana").innerHTML = BASE.windows.map((w) => `<button data-w="${w}" aria-pressed="false">${WIN_LABEL[w] || w}</button>`).join("");
+  $("fTipos").innerHTML = `<button data-t="" aria-pressed="false">Todos</button>` + BASE.types.filter((t) => !t.noData).map((t) => `<button data-t="${t.id}" aria-pressed="false">${t.name}</button>`).join("");
   $("fRegion").innerHTML = `<option value="">Toda España</option>` + BASE.regions.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join("");
   $("fVentana").onclick = (e) => { const b = e.target.closest("[data-w]"); if (!b) return; f.w = b.dataset.w; changed(); };
   $("fTipos").onclick = (e) => {
@@ -36,8 +43,8 @@ function init() {
 function changed() { store.set("statsFiltros", f); showStats(BASE); }
 
 function pintarFiltros() {
-  for (const b of $("fVentana").children) b.classList.toggle("on", b.dataset.w === f.w);
-  for (const b of $("fTipos").children) b.classList.toggle("on", b.dataset.t ? f.tipos.includes(b.dataset.t) : !f.tipos.length);
+  for (const b of $("fVentana").children) { const on = b.dataset.w === f.w; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
+  for (const b of $("fTipos").children) { const on = b.dataset.t ? f.tipos.includes(b.dataset.t) : !f.tipos.length; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); }
   $("fRegion").value = f.region;
 }
 
@@ -53,6 +60,7 @@ const kpi = (label, value, cls = "", small = "") => `<div class="kpi ${cls}"><sp
 const clsPct = (p) => (p == null ? "" : p >= 30 ? "grave" : p >= 15 ? "leve" : "ok");
 
 function render(s) {
+  ultimo = s;
   const k = s.kpis, live = s.window === "now";
   $("cobertura").innerHTML = live ? "Trenes en circulación en este momento (datos de Renfe cada 15 s)."
     : s.coverage.since ? `Datos recogidos desde el ${fechaHora(s.coverage.since)} · ${s.coverage.days < 1 ? Math.round(s.coverage.days * 24) + " h" : s.coverage.days + " días"} de datos en este periodo. Los periodos largos se irán llenando mientras el recolector siga funcionando.`
@@ -93,9 +101,9 @@ function render(s) {
     charts.serie = new Chart($("cSerie"), {
       type: "line",
       data: { labels: pts.map((p) => lbl(p.t)), datasets: [
-        { label: "Retraso medio (min)", data: pts.map((p) => p.avgDelay), borderColor: "#F0B429", backgroundColor: "#F0B42933", yAxisID: "y", tension: 0.3, pointRadius: 0, fill: true },
-        { label: "% con ≥ 5 min", data: pts.map((p) => p.pctLate), borderColor: "#F4603F", yAxisID: "y1", tension: 0.3, pointRadius: 0 },
-        { label: s.series.step === "hour" ? "Trenes circulando" : "Trenes", data: pts.map((p) => p.trains), borderColor: "#7FA7D6", yAxisID: "y2", tension: 0.3, pointRadius: 0, borderDash: [4, 4] },
+        { label: "Retraso medio (min)", data: pts.map((p) => p.avgDelay), borderColor: COL.leve, backgroundColor: alfa(COL.leve, 0.18), yAxisID: "y", tension: 0.3, pointRadius: 0, fill: true },
+        { label: "% con ≥ 5 min", data: pts.map((p) => p.pctLate), borderColor: COL.grave, yAxisID: "y1", tension: 0.3, pointRadius: 0 },
+        { label: s.series.step === "hour" ? "Trenes circulando" : "Trenes", data: pts.map((p) => p.trains), borderColor: COL.acento, yAxisID: "y2", tension: 0.3, pointRadius: 0, borderDash: [4, 4] },
       ] },
       options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
         scales: { y: { position: "left", title: { display: true, text: "min" }, beginAtZero: true }, y1: { position: "right", min: 0, max: 100, grid: { display: false }, title: { display: true, text: "%" } }, y2: { display: false, beginAtZero: true } } },
@@ -104,20 +112,20 @@ function render(s) {
 
   charts.dist = new Chart($("cDist"), {
     type: "bar",
-    data: { labels: s.distribution.map((b) => b.label + (b.label === "En hora" ? "" : " min")), datasets: [{ data: s.distribution.map((b) => b.n), backgroundColor: ["#4CC38A", "#4CC38A", "#F0B429", "#F4603F", "#F4603F", "#F4603F"] }] },
+    data: { labels: s.distribution.map((b) => b.label + (b.label === "En hora" ? "" : " min")), datasets: [{ data: s.distribution.map((b) => b.n), backgroundColor: [COL.ok, COL.ok, COL.leve, COL.grave, COL.grave, COL.grave], borderRadius: 3 }] },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
   });
   charts.tipos = barTypes("cTipos", s.byType, "pctLate", "% con ≥ 5 min");
   if (s.busiestHours?.length) {
     charts.horas = new Chart($("cHoras"), {
       type: "bar",
-      data: { labels: s.busiestHours.map((x) => x.h + "h"), datasets: [{ label: "Trenes circulando (media)", data: s.busiestHours.map((x) => x.avg), backgroundColor: "#7FA7D6" }] },
+      data: { labels: s.busiestHours.map((x) => x.h + "h"), datasets: [{ label: "Trenes circulando (media)", data: s.busiestHours.map((x) => x.avg), backgroundColor: COL.acento, borderRadius: 3 }] },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
     });
   } else $("cHorasVacio").hidden = false;
 
-  const tabla = (title, rows, cols, note = "") => `<div class="card"><h2>${title}</h2>${rows?.length ? `<table class="tabla"><thead><tr>${cols.map((c) => `<th class="${c.n ? "n" : ""}">${c.h}</th>`).join("")}</tr></thead><tbody>
-    ${rows.map((r) => `<tr>${cols.map((c) => `<td class="${c.n ? "n" : ""}">${c.f(r)}</td>`).join("")}</tr>`).join("")}</tbody></table>` : `<p class="vacio-card">Sin datos todavía.</p>`}${note ? `<p class="nota">${note}</p>` : ""}</div>`;
+  const tabla = (title, rows, cols, note = "") => `<div class="card"><h2>${title}</h2>${rows?.length ? `<div class="tabla-scroll"><table class="tabla"><thead><tr>${cols.map((c) => `<th scope="col" class="${c.n ? "n" : ""}">${c.h}</th>`).join("")}</tr></thead><tbody>
+    ${rows.map((r) => `<tr>${cols.map((c) => `<td class="${c.n ? "n" : ""}">${c.f(r)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<p class="vacio-card">Sin datos todavía.</p>`}${note ? `<p class="nota">${note}</p>` : ""}</div>`;
   const per = live ? "ahora" : "por día";
   const runsCol = { h: live ? "Trenes" : "Trenes/día", n: 1, f: (r) => fmt(live ? r.runs : r.perDay) };
   const trenLink = (r) => `<a href="#/tren/${r.id || r.train}">${TYPE_NAME[r.type] || ""} ${r.train}</a>`;
@@ -135,7 +143,7 @@ function barTypes(id, byType, key, label) {
   const rows = [...(byType || [])].sort((a, b) => b.runs - a.runs);
   return new Chart($(id), {
     type: "bar",
-    data: { labels: rows.map((r) => TYPE_NAME[r.type] || r.type), datasets: [{ label, data: rows.map((r) => r[key]), backgroundColor: "#7FA7D6" }] },
+    data: { labels: rows.map((r) => TYPE_NAME[r.type] || r.type), datasets: [{ label, data: rows.map((r) => r[key]), backgroundColor: COL.acento, borderRadius: 3 }] },
     options: { responsive: true, maintainAspectRatio: false, indexAxis: "y", plugins: { legend: { display: false }, tooltip: { callbacks: { afterLabel: (c) => `${rows[c.dataIndex].runs} trenes` } } }, scales: { x: { beginAtZero: true, title: { display: true, text: label } } } },
   });
 }

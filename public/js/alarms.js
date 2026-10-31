@@ -24,7 +24,7 @@ export function setGlobal(cfg, D) {
     const act = (D.incidencias || []).filter((i) => i.major && matchesRegion(i));
     act.forEach((i) => seenGlobal.add(i.id));
     store.set("vistosGlobales", [...seenGlobal]);
-    if (act.length) notify("Incidencias graves activas", `${act.length} ahora mismo: ${act.map((i) => i.title).join(" · ")}`, { level: "grave", url: "#/" });
+    if (act.length) notify("Incidencias graves activas", `${act.length} ahora mismo: ${act.map((i) => i.title).join(" · ")}`, { level: "grave", url: "#/incidencias" });
   }
   listeners.forEach((f) => f());
 }
@@ -62,7 +62,7 @@ export async function check(D) {
   if (globalCfg.major) for (const i of D.incidencias || []) {
     if (!i.major || seenGlobal.has(i.id) || !matchesRegion(i)) continue;
     seenGlobal.add(i.id);
-    notify("Incidencia grave", i.title, { level: "grave", url: "#/", tag: i.id });
+    notify("Incidencia grave", i.title, { level: "grave", url: "#/incidencias?id=" + encodeURIComponent(i.id), tag: i.id });
   }
   if (globalCfg.prox) for (const p of D.proximidad || []) {
     if (seenGlobal.has(p.id)) continue;

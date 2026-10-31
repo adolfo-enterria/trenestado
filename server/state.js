@@ -13,6 +13,7 @@ export const state = {
   sources: {
     renfe: { ok: false },
     cercanias: { ok: false },
+    gtfsCercanias: { ok: false },
     gtfsRt: { ok: false },
     renfeAlerts: { ok: false },
     adif: { ok: false },

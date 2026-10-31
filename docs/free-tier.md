@@ -13,6 +13,8 @@ that decide it. Limits checked on 2026-10-31 against the providers' docs; re-che
 | Website (HTML/JS/CSS) | **Cloudflare Pages** (`*.pages.dev`) | ✅ static assets |
 | Cercanías departure boards proxy | **Pages Function** | ✅ counts against 100,000 Worker requests/day |
 | Domain | `*.pages.dev` | ✅ (a custom domain is optional and costs ~€10/year) |
+| Basemap with place names | **OpenFreeMap** vector tiles (MapLibre) | ✅ no key, no request limits, commercial use allowed; attribution required |
+| Track geometry | OpenStreetMap, prebuilt in `assets/rail.json` | ✅ static file, no runtime requests |
 
 **Not on Cloudflare: the collector.** Cloudflare Workers Free gives **10 ms of CPU per invocation**
 (cron triggers included). One collector cycle (parse ~125 KB of JSON, match ~700 trains to the timetable,
@@ -135,3 +137,21 @@ Code changes still needed (the current app is a single Node server with SQLite)
 - **Adif from datacenter IPs**: Supabase runs on AWS; Adif's CDN may block it where it didn't block us.
   Incidents then come only from our own detection (already handled).
 - **Renfe changes the undocumented map JSON**: not a cost issue, but the collector would need updating.
+
+## 7. Data downloads on the free plan
+
+The local app streams exports from SQLite (`/api/export`). In production, don't serve big exports from
+Supabase: PostgREST can return CSV (`Accept: text/csv`), but a one-year `recorridos` export is ~700k rows
+(~80 MB), so 60 such downloads would use the whole 5 GB/month egress.
+
+Instead:
+- The nightly `maintenance` job (or the collector's first run after midnight) writes **one gzipped CSV per
+  dataset per month** to R2 (`exports/recorridos/2026-10.csv.gz`, …), overwriting the current month daily.
+  ~13 R2 writes/day, far under the free 1 M/month; R2 egress is free.
+- The Descargar datos page builds the list of monthly files for the chosen window and downloads them (or a
+  Pages Function concatenates them on the fly, streaming from R2: cheap on CPU).
+- Only "today" comes from Supabase (small).
+
+Cercanías timetable in Supabase: load only today's and tomorrow's Cercanías trips (~105k stop times,
+~10 MB), not the whole 1.9 M-row file.
+

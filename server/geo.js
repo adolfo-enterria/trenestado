@@ -62,9 +62,23 @@ function locate(features, lon, lat) {
 let REG = null, PROV = null, MUNI = null;
 const normName = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 /** Approximate centre (bbox centre) of a municipality by name, e.g. "Villarrubia de Santiago". */
+let MUNI_LIST = null;
+function muniList() {
+  if (!MUNI_LIST) MUNI_LIST = loadFeatures("municipalities", "municipalities").map((f) => ({ n: f.name, key: normName(f.name), lat: (f.bbox[1] + f.bbox[3]) / 2, lon: (f.bbox[0] + f.bbox[2]) / 2 }));
+  return MUNI_LIST;
+}
 export function municipality(name) {
-  if (!MUNI) MUNI = new Map(loadFeatures("municipalities", "municipalities").map((f) => [normName(f.name), [(f.bbox[1] + f.bbox[3]) / 2, (f.bbox[0] + f.bbox[2]) / 2]]));
+  if (!MUNI) MUNI = new Map(muniList().map((m) => [m.key, [m.lat, m.lon]]));
   return MUNI.get(normName(name)) || null;
+}
+
+/** Municipalities whose name contains the query (accent-insensitive); prefix matches first. */
+export function searchMunicipalities(q, limit = 6) {
+  const k = normName(q);
+  if (k.length < 3) return [];
+  const hits = muniList().filter((m) => m.key.includes(k));
+  hits.sort((a, b) => (b.key.startsWith(k) - a.key.startsWith(k)) || a.key.length - b.key.length);
+  return hits.slice(0, limit).map((m) => ({ n: m.n, lat: Math.round(m.lat * 1e5) / 1e5, lon: Math.round(m.lon * 1e5) / 1e5, prov: placeOf(m.lat, m.lon).province }));
 }
 function ensure() { if (!REG) { REG = loadFeatures("autonomous_regions", "autonomous_regions"); PROV = loadFeatures("provinces", "provinces"); } }
 

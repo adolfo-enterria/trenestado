@@ -84,5 +84,9 @@ Added 2026-10-31 (second pass):
 | `supabase/schema.sql` (tables, RLS, functions, nightly roll-up/retention job) | ✅ validated on Postgres (PGlite), re-runnable |
 | `docs/free-tier.md` (free architecture and limits) | ✅ |
 
+Feedback round 1 (2026-10-31): Incidencias tab, new visual identity (ballast-grey + cobalt palette, Archivo
+type, light/dark themes, map-first layout, bottom sheet on mobile), real OSM track geometry (98 % of stop pairs
+routed on track; incidents and train routes follow the track). ✅
+
 Next steps: port the collector to a Supabase Edge Function and the API to Postgres functions + Cloudflare
 Pages Functions (docs/free-tier.md §5); English UI; automated tests.
