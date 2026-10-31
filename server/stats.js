@@ -1,10 +1,10 @@
 // Statistics for the Estadísticas tab. Window → table mapping in docs/requirements.md §3.
 import { db, meta, AGG_SQL } from "./db.js";
-import { DELAY } from "./config.js";
+import { DELAY, WINDOWS } from "./config.js";
 import { madridDate } from "./sources/gtfs-static.js";
 import { state, cancelledOn } from "./state.js";
 
-export const WINDOWS = { now: 0, "1D": 1, "7D": 7, "1M": 30, "3M": 91, "6M": 182, "1A": 365, YTD: null };
+export { WINDOWS };
 
 function windowStart(w, now = Date.now()) {
   if (w === "YTD") {

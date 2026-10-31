@@ -52,4 +52,7 @@ export const STOPPED = {
   majorDelayRise: 15,
 };
 
+// Statistics windows (days; YTD = since 1 January)
+export const WINDOWS = { now: 0, "1D": 1, "7D": 7, "1M": 30, "3M": 91, "6M": 182, "1A": 365, YTD: null };
+
 export const RETENTION = { snapshotsDays: 7, cercaniasRunsDays: 90 };

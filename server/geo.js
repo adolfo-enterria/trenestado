@@ -72,6 +72,9 @@ export function municipality(name) {
   return MUNI.get(normName(name)) || null;
 }
 
+/** Every municipality with its province (for the places table of the Supabase deployment). */
+export const allMunicipalities = () => muniList().map((m) => ({ n: m.n, key: m.key, lat: m.lat, lon: m.lon, prov: placeOf(m.lat, m.lon).province }));
+
 /** Municipalities whose name contains the query (accent-insensitive); prefix matches first. */
 export function searchMunicipalities(q, limit = 6) {
   const k = normName(q);

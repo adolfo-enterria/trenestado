@@ -245,6 +245,31 @@ create table if not exists public.proximity_events (          -- experimental; s
 );
 create index if not exists proximity_events_ts on public.proximity_events (ts);
 
+-- Live snapshot (the /api/estado payload), also published to R2. Fallback when R2 isn't reachable.
+create table if not exists public.live_state (
+  id          smallint primary key default 1 check (id = 1),
+  payload     jsonb not null,
+  updated_at  timestamptz not null default now()
+);
+
+-- Municipalities for place search ("Las Rozas de Madrid"), loaded by the daily job.
+create extension if not exists pg_trgm;
+create table if not exists public.places (
+  name        text not null,
+  name_norm   text not null,                    -- lower case, no accents
+  province    text,
+  lat         double precision not null,
+  lon         double precision not null,
+  primary key (name, lat, lon)
+);
+create index if not exists places_name_trgm on public.places using gin (name_norm gin_trgm_ops);
+
+-- Real track path between consecutive stops (from assets/rail.json, OpenStreetMap), loaded by the daily job.
+create table if not exists public.rail_pairs (
+  pair        text primary key,                 -- "04040-17000" (codes sorted)
+  pts         jsonb not null                    -- [lat, lon, lat, lon, …]
+);
+
 create table if not exists public.meta (
   key    text primary key,
   value  text
@@ -260,7 +285,7 @@ begin
   foreach t in array array[
     'stations', 'gtfs_calendar', 'gtfs_calendar_dates', 'gtfs_trips', 'gtfs_stop_times', 'gtfs_shapes', 'cercanias_lines',
     'live_trains', 'cancellations', 'source_status', 'train_runs', 'daily_line_stats', 'scheduled_days',
-    'hourly_stats', 'snapshots', 'incidents', 'proximity_events'
+    'hourly_stats', 'snapshots', 'incidents', 'proximity_events', 'live_state', 'places', 'rail_pairs'
   ] loop
     execute format('alter table public.%I enable row level security', t);
     if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = t and policyname = 'public read') then
@@ -394,23 +419,18 @@ grant execute on function public.station_timetable(text, text, integer, integer)
 select cron.unschedule(jobid) from cron.job where jobname = 'trenestado-maintenance';
 select cron.schedule('trenestado-maintenance', '15 2 * * *', $$select public.maintenance()$$);
 
--- After deploying the Edge Functions, store the project URL and a key in Vault and schedule them.
--- (Dashboard → Project Settings → API for the URL; use the service_role or a dedicated secret.)
+-- After deploying the "collector" Edge Function (docs/deploy.md), store the project URL and the collector's
+-- shared secret (the CRON_SECRET you set as a function secret) in Vault, then schedule it every minute:
 --
 --   select vault.create_secret('https://<project-ref>.supabase.co', 'project_url');
---   select vault.create_secret('<service-role-key>', 'service_key');
+--   select vault.create_secret('<same value as the CRON_SECRET function secret>', 'cron_secret');
 --
 --   select cron.schedule('trenestado-collector', '* * * * *', $$
 --     select net.http_post(
 --       url     := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/collector',
---       headers := jsonb_build_object('Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'service_key'),
+--       headers := jsonb_build_object('x-cron-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret'),
 --                                     'Content-Type', 'application/json'),
 --       body    := '{}'::jsonb, timeout_milliseconds := 55000)
 --   $$);
 --
---   select cron.schedule('trenestado-gtfs', '0 3 * * *', $$
---     select net.http_post(
---       url     := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/gtfs',
---       headers := jsonb_build_object('Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'service_key')),
---       body    := '{}'::jsonb, timeout_milliseconds := 140000)
---   $$);
+-- Timetables are loaded daily by GitHub Actions (.github/workflows/daily.yml), not by Supabase.

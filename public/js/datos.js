@@ -94,7 +94,7 @@ function render() {
             <label>Desde<input type="date" id="dDesde" value="${esc(S.desde)}" ${d.desde ? `min="${d.desde}"` : ""} ${d.hasta ? `max="${d.hasta}"` : ""}></label>
             <label>Hasta<input type="date" id="dHasta" value="${esc(S.hasta)}" ${d.desde ? `min="${d.desde}"` : ""} ${d.hasta ? `max="${d.hasta}"` : ""}></label>
           </div>
-          ${errorFechas ? `<p class="err">La fecha de inicio es posterior a la de fin.</p>` : `<p class="nota">${n ? `${n} ${n === 1 ? "día" : "días"}` : "Todo lo disponible"}${filas != null ? ` · ≈ ${fmt(filas)} filas` : ""}${d.desde ? ` · hay datos desde el ${fechaTxt(d.desde)}` : ""}</p>`}
+          ${errorFechas ? `<p class="err">La fecha de inicio es posterior a la de fin.</p>` : `<p class="nota">${n ? `${n} ${n === 1 ? "día" : "días"}` : "Todo lo disponible"}${filas != null ? ` · ≈ ${fmt(filas)} filas` : ""}${d.desde ? ` · hay datos desde el ${fechaTxt(d.desde)}` : ""}</p>${INFO?.modo === "mensual" ? `<p class="nota">Se descargan meses completos (del primer mes al último del periodo), con datos hasta ayer.</p>` : ""}`}
         </section>
         ${f.length ? `<section class="datos-paso card" aria-labelledby="dP3">
           <h2 id="dP3"><span class="paso">3</span>Filtros</h2>

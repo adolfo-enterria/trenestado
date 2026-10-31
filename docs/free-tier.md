@@ -134,8 +134,9 @@ Code changes still needed (the current app is a single Node server with SQLite)
   Requests then fail until 00:00 UTC. Mitigation: raise the browser poll interval automatically when the
   daily count gets high, or serve `estado.json` from R2 through a custom domain with Cloudflare caching
   (needs a domain).
-- **Adif from datacenter IPs**: Supabase runs on AWS; Adif's CDN may block it where it didn't block us.
-  Incidents then come only from our own detection (already handled).
+- **Adif blocks the collector**: confirmed in testing — Adif's CDN answers 403 to Deno's `fetch` (the Edge
+  Function runtime) while it answered 200 to Node's. Incidents then come only from our own detection
+  (mass cancellations, stopped trains); the collector keeps trying once a minute.
 - **Renfe changes the undocumented map JSON**: not a cost issue, but the collector would need updating.
 
 ## 7. Data downloads on the free plan

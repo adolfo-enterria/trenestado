@@ -1,0 +1,10 @@
+# Supabase CLI config (functions only; the database schema is supabase/schema.sql, run in the SQL editor).
+# `npx supabase link --project-ref <ref>` fills in the project; `npx supabase functions deploy` deploys both.
+
+[functions.collector]
+# called by Supabase Cron with the x-cron-secret header (checked in the function)
+verify_jwt = false
+
+[functions.api]
+# public, read-only; called by the Cloudflare Pages Function
+verify_jwt = false

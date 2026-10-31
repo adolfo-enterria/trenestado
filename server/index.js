@@ -1,19 +1,18 @@
 import path from "node:path";
 import express from "express";
-import { createRequire } from "node:module";
-import * as topojson from "topojson-client";
 import { PORT, ROOT, EVERY } from "./config.js";
 import { TYPES, productName, typeOf } from "./products.js";
-import { REGIONS, ZONES, searchMunicipalities } from "./geo.js";
+import { REGIONS, searchMunicipalities } from "./geo.js";
 import { gtfs, tripFor, runsOn, normTrain, normCode, madridDate, madridMinutes } from "./sources/gtfs-static.js";
 import { fetchSalidas } from "./sources/renfe.js";
 import { cerTrip, cerRoute } from "./sources/gtfs-cercanias.js";
-import { shortName, lineKey, cityName } from "./lines.js";
+import { shortName, lineKey } from "./lines.js";
 import { state, isCancelled, cancelledOn } from "./state.js";
 import { db, stmts } from "./db.js";
 import { computeStats, WINDOWS } from "./stats.js";
 import { startCollector } from "./collector.js";
-import { networkSegments, pathForStops } from "./rail.js";
+import { pathForStops } from "./rail.js";
+import { baseConfig, land, railSegments, cercaniasLines } from "./static-data.js";
 import { exportInfo, streamExport } from "./export.js";
 
 const app = express();
@@ -54,61 +53,13 @@ function punctuality(network, n, days = 30) {
 }
 
 // ---------- static-ish data ----------
-let citiesCache = null;
-function mainCities() {
-  if (citiesCache?.v === gtfs.loadedAt) return citiesCache.d;
-  const count = new Map();
-  for (const t of gtfs.trips.values()) for (const s of t.stops) count.set(s.code, (count.get(s.code) || 0) + 1);
-  const seen = new Set(), d = [];
-  for (const [code] of [...count].sort((a, b) => b[1] - a[1])) {
-    const s = gtfs.stations.get(code); if (!s) continue;
-    const city = cityName(code);
-    if (seen.has(city)) continue;
-    seen.add(city);
-    d.push({ code, n: city, lat: s.lat, lon: s.lon });
-    if (d.length >= 60) break;
-  }
-  citiesCache = { v: gtfs.loadedAt, d };
-  return d;
-}
-
-app.get("/api/base", (req, res) => {
-  res.json({ types: TYPES, zones: ZONES, regions: REGIONS, windows: Object.keys(WINDOWS), principales: mainCities(), pollSeconds: EVERY.live / 1000 });
-});
-
-// Land for the map, self-hosted (no tile provider/API key): Spain's regions + neighbouring countries.
-const require = createRequire(import.meta.url);
-let landCache = null;
-function land() {
-  if (landCache) return landCache;
-  const round = (g) => JSON.parse(JSON.stringify(g, (k, v) => (typeof v === "number" ? Math.round(v * 1e3) / 1e3 : v)));
-  const es = require("es-atlas/es/autonomous_regions.json");
-  const world = require("world-atlas/countries-50m.json");
-  const near = new Set(["620", "250", "020", "504", "012"]);
-  landCache = {
-    spain: round(topojson.feature(es, es.objects.autonomous_regions)),
-    borders: round(topojson.mesh(es, es.objects.autonomous_regions, (a, b) => a !== b)),
-    neighbours: round({ type: "FeatureCollection", features: topojson.feature(world, world.objects.countries).features.filter((f) => near.has(f.id)) }),
-  };
-  return landCache;
-}
+app.get("/api/base", (req, res) => res.json(baseConfig()));
 app.get("/api/tierra", (req, res) => res.set("Cache-Control", "public, max-age=86400").json(land()));
-
-let redCache = null;
-app.get("/api/red", (req, res) => {
-  if (!redCache || redCache.v !== gtfs.loadedAt) redCache = { v: gtfs.loadedAt, d: networkSegments().map((s) => s.map((x) => Math.round(x * 1e4) / 1e4)) };
-  res.set("Cache-Control", "public, max-age=3600").json(redCache.d);
-});
-
-let redCerCache = null;
+app.get("/api/red", (req, res) => res.set("Cache-Control", "public, max-age=3600").json(railSegments()));
 app.get("/api/red-cercanias", (req, res) => {
-  const g = state.cercaniasLines;
-  if (!g) return res.status(503).json({ error: "Líneas de Cercanías aún no cargadas" });
-  if (redCerCache?.v !== g) {
-    const r = (c) => (typeof c[0] === "number" ? [Math.round(c[1] * 1e4) / 1e4, Math.round(c[0] * 1e4) / 1e4] : c.map(r)); // → [lat, lon]
-    redCerCache = { v: g, d: g.features.map((f) => ({ l: f.properties.CODIGO, n: f.properties.NUCLEO, c: f.properties.COLOR, g: r(f.geometry.coordinates), multi: f.geometry.type === "MultiLineString" })) };
-  }
-  res.set("Cache-Control", "public, max-age=3600").json(redCerCache.d);
+  const d = cercaniasLines(state.cercaniasLines);
+  if (!d) return res.status(503).json({ error: "Líneas de Cercanías aún no cargadas" });
+  res.set("Cache-Control", "public, max-age=3600").json(d);
 });
 
 // ---------- live ----------
