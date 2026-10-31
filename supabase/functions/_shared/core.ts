@@ -13,8 +13,18 @@ const R2_KEY = Deno.env.get("R2_ACCESS_KEY_ID");
 const r2 = R2_KEY ? new AwsClient({ accessKeyId: R2_KEY, secretAccessKey: Deno.env.get("R2_SECRET_ACCESS_KEY")!, service: "s3", region: "auto" }) : null;
 const R2_URL = r2 ? `https://${Deno.env.get("R2_ACCOUNT_ID")}.r2.cloudflarestorage.com/${Deno.env.get("R2_BUCKET") || "trenestado"}` : "";
 export const r2Enabled = !!r2;
+// Cost guard: R2's free plan includes 1 M writes/month. Every write is counted in meta ("r2_writes_YYYY-MM",
+// shared with the daily job) and writes stop at R2_MONTHLY_WRITE_BUDGET, so the bill can't go above zero.
+export const R2_MONTHLY_WRITE_BUDGET = 800_000;
+async function r2Budget() {
+  const key = "r2_writes_" + madridDate().slice(0, 7);
+  const [r] = await sql`insert into public.meta (key, value) values (${key}, '1')
+    on conflict (key) do update set value = (meta.value::bigint + 1)::text returning value::bigint as n`;
+  return Number(r.n) <= R2_MONTHLY_WRITE_BUDGET;
+}
 export async function r2Put(key: string, body: string, type = "application/json", cache = "public, max-age=30") {
   if (!r2) return false;
+  if (!(await r2Budget())) { console.warn(`R2 write budget reached for this month; skipping ${key}`); return false; }
   const r = await r2.fetch(`${R2_URL}/${key}`, { method: "PUT", body, headers: { "Content-Type": type, "Cache-Control": cache } });
   if (!r.ok) throw new Error(`R2 PUT ${key} → ${r.status}`);
   return true;

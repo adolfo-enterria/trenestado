@@ -28,8 +28,30 @@ const sql = postgres(env("DATABASE_URL"), { prepare: false, max: 4, idle_timeout
 const r2 = process.env.R2_ACCESS_KEY_ID ? new AwsClient({ accessKeyId: env("R2_ACCESS_KEY_ID"), secretAccessKey: env("R2_SECRET_ACCESS_KEY"), service: "s3", region: "auto" }) : null;
 const R2_URL = r2 && `https://${env("R2_ACCOUNT_ID")}.r2.cloudflarestorage.com/${process.env.R2_BUCKET || "trenestado"}`;
 
+// Cost guards (R2 free plan: 1 M writes and 10 GB per month). Writes are counted in the same meta key the
+// collector uses and stop at the shared budget; download files are skipped if the bucket passes 8 GB.
+const R2_MONTHLY_WRITE_BUDGET = 800_000, R2_STORAGE_BUDGET = 8e9;
+async function withinWriteBudget() {
+  const key = "r2_writes_" + madridDate().slice(0, 7);
+  const [r] = await sql`insert into public.meta (key, value) values (${key}, '1')
+    on conflict (key) do update set value = (meta.value::bigint + 1)::text returning value::bigint as n`;
+  return Number(r.n) <= R2_MONTHLY_WRITE_BUDGET;
+}
+async function bucketBytes() {
+  let total = 0, token = null;
+  do {
+    const r = await r2.fetch(`${R2_URL}?list-type=2${token ? "&continuation-token=" + encodeURIComponent(token) : ""}`);
+    if (!r.ok) throw new Error(`R2 list → ${r.status}`);
+    const xml = await r.text();
+    for (const m of xml.matchAll(/<Size>(\d+)<\/Size>/g)) total += Number(m[1]);
+    token = /<IsTruncated>true<\/IsTruncated>/.test(xml) ? xml.match(/<NextContinuationToken>([^<]+)<\/NextContinuationToken>/)?.[1] : null;
+  } while (token);
+  return total;
+}
+
 async function put(key, body, type = "application/json") {
   if (!r2) { console.warn(`  (no R2 credentials) skip ${key}`); return; }
+  if (!(await withinWriteBudget())) throw new Error(`R2 write budget (${R2_MONTHLY_WRITE_BUDGET}/month) reached; not writing ${key}`);
   const r = await r2.fetch(`${R2_URL}/${key}`, { method: "PUT", body, headers: { "Content-Type": type, "Cache-Control": key.startsWith("static/") ? "public, max-age=3600" : "public, max-age=600" } });
   if (!r.ok) throw new Error(`R2 PUT ${key} → ${r.status} ${await r.text()}`);
   console.log(`  R2 ${key} (${(Buffer.byteLength(body) / 1e3).toFixed(0)} kB)`);
@@ -149,6 +171,11 @@ const monthEnd = (ym) => { const [y, m] = ym.split("-").map(Number); return new 
 
 async function syncExports() {
   console.log("Monthly exports → R2");
+  if (r2) {
+    const bytes = await bucketBytes();
+    console.log(`  bucket size ${(bytes / 1e6).toFixed(1)} MB`);
+    if (bytes > R2_STORAGE_BUDGET) { console.warn(`  bucket above ${R2_STORAGE_BUDGET / 1e9} GB: skipping download files to stay in the free plan`); return; }
+  }
   if (!gtfs.loadedAt) await loadGtfs(); // station names for the CSVs
   const today = madridDate(), yesterday = madridDate(new Date(Date.now() - 86400_000));
   const thisMonth = today.slice(0, 7), lastMonth = madridDate(new Date(Date.now() - 32 * 86400_000)).slice(0, 7);

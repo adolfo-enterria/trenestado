@@ -139,6 +139,15 @@ Code changes still needed (the current app is a single Node server with SQLite)
   (mass cancellations, stopped trains); the collector keeps trying once a minute.
 - **Renfe changes the undocumented map JSON**: not a cost issue, but the collector would need updating.
 
+## 6b. Cost guards (R2 has no hard spending cap)
+
+- **Write budget**: the collector and the daily job count every R2 write in `meta` (`r2_writes_YYYY-MM`) and
+  stop at 800,000/month (free: 1 M). The map then falls back to an older snapshot instead of costing money.
+- **Storage budget**: the daily job measures the bucket and skips new download files above 8 GB (free: 10 GB).
+- **Reads** are capped by the Workers free plan (100,000 requests/day → ≤ 3 M/month; free: 10 M). The
+  bucket is private, so nothing else can read it.
+- **Billing alert**: Cloudflare notification "Trenestado: cualquier gasto (R2)" emails at $1 of spending.
+
 ## 7. Data downloads on the free plan
 
 The local app streams exports from SQLite (`/api/export`). In production, don't serve big exports from
