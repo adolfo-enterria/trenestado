@@ -24,7 +24,20 @@ const steps = args.filter((a) => !a.startsWith("--"));
 const want = (s) => !steps.length || steps.includes(s);
 const env = (k, req = true) => { const v = process.env[k]; if (!v && req) throw new Error(`Missing env ${k}`); return v; };
 
-const sql = postgres(env("DATABASE_URL"), { prepare: false, max: 4, idle_timeout: 20, connect_timeout: 30 });
+// Never print secrets: this runs in a public repository's Actions logs. Every log line and error goes through
+// mask(), and DATABASE_URL is validated up front with a message that doesn't include it.
+const SECRETS = ["DATABASE_URL", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"].map((k) => process.env[k]).filter(Boolean);
+try { const u = new URL(process.env.DATABASE_URL || ""); if (u.password) SECRETS.push(u.password, decodeURIComponent(u.password)); } catch {}
+const mask = (x) => { let s = x instanceof Error ? `${x.name}: ${x.message}` : String(x); for (const v of SECRETS) if (v.length >= 4) s = s.split(v).join("***"); return s.replace(/postgres(ql)?:\/\/[^\s"']+/g, "postgres://***"); };
+for (const level of ["log", "warn", "error"]) { const orig = console[level].bind(console); console[level] = (...a) => orig(...a.map(mask)); }
+function checkDbUrl(raw) {
+  let u;
+  try { u = new URL(raw); } catch { throw new Error("DATABASE_URL is not a valid URL (if the password contains @ : / # ? % encode them, e.g. # → %23, or use a letters-and-digits password)"); }
+  if (!/^postgres(ql)?:$/.test(u.protocol) || !u.hostname || u.hostname.includes(":") || !u.password)
+    throw new Error("DATABASE_URL looks malformed (expected postgresql://user:password@host:5432/postgres; special characters in the password must be URL-encoded)");
+  return raw;
+}
+const sql = postgres(checkDbUrl(env("DATABASE_URL")), { prepare: false, max: 4, idle_timeout: 20, connect_timeout: 30 });
 const r2 = process.env.R2_ACCESS_KEY_ID ? new AwsClient({ accessKeyId: env("R2_ACCESS_KEY_ID"), secretAccessKey: env("R2_SECRET_ACCESS_KEY"), service: "s3", region: "auto" }) : null;
 const R2_URL = r2 && `https://${env("R2_ACCOUNT_ID")}.r2.cloudflarestorage.com/${process.env.R2_BUCKET || "trenestado"}`;
 
@@ -213,7 +226,7 @@ try {
   if (want("exports")) await syncExports();
   console.log("done");
 } catch (e) {
-  console.error(e);
+  console.error(mask(e));
   process.exitCode = 1;
 } finally {
   await sql.end({ timeout: 5 });
