@@ -34,16 +34,17 @@ Locally, once (the CLI opens the browser to log in):
 ```sh
 npx supabase login
 npx supabase link --project-ref <project-ref>
-npx supabase secrets set CRON_SECRET=<long random string> R2_ACCOUNT_ID=<id> R2_ACCESS_KEY_ID=<key> R2_SECRET_ACCESS_KEY=<secret> R2_BUCKET=trenestado
+npx supabase secrets set R2_ACCOUNT_ID=<id> R2_ACCESS_KEY_ID=<key> R2_SECRET_ACCESS_KEY=<secret> R2_BUCKET=trenestado
 npx supabase functions deploy collector
 npx supabase functions deploy api
 ```
 
-Then in the **SQL Editor**, schedule the collector every minute (same CRON_SECRET value):
+Then in the **SQL Editor**, schedule the collector every minute. The shared secret is generated inside the
+database and the collector reads it from Vault, so it never has to be copied anywhere:
 
 ```sql
 select vault.create_secret('https://<project-ref>.supabase.co', 'project_url');
-select vault.create_secret('<same CRON_SECRET>', 'cron_secret');
+select vault.create_secret(encode(extensions.gen_random_bytes(24), 'hex'), 'cron_secret');
 select cron.schedule('trenestado-collector', '* * * * *', $$
   select net.http_post(
     url     := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url') || '/functions/v1/collector',
@@ -69,17 +70,16 @@ collector has no stations). It runs by itself every night at 03:30 UTC.
 ## 5. Cloudflare Pages (the website)
 
 1. **Workers & Pages → Create → Pages → Connect to Git** → repository `trenestado`.
-2. Build settings: framework *None*, build command *(empty)*, **output directory `public`**.
+2. Build settings: framework *None*, **build command `npm ci && npm run vendor`**, **output directory `public`**.
    The `functions/` folder at the repo root is picked up automatically.
 3. **Settings → Bindings → R2 bucket**: variable name **`LIVE`**, bucket `trenestado`.
-4. **Settings → Variables**: `SUPABASE_URL` = `https://<project-ref>.supabase.co`,
-   `SUPABASE_ANON_KEY` = the publishable/anon key.
+4. **Settings → Variables**: `SUPABASE_URL` = `https://<project-ref>.supabase.co` (no key needed: the
+   Supabase "api" function is public and read-only).
 5. Redeploy. The site is at `https://<project>.pages.dev`.
 
 The frontend loads `/vendor/leaflet/…`, `/vendor/chart.js/…`, `/vendor/maplibre-gl/…` and
 `/vendor/maplibre-gl-leaflet/…`, which the local server serves from `node_modules`. For Pages, copy them into
-`public/vendor/` with `npm run vendor` (see package.json) before deploying — the build command can do it:
-**build command `npm ci && npm run vendor`**.
+`public/vendor/` with `npm run vendor` — that's what the build command above does.
 
 ## Checking it works
 

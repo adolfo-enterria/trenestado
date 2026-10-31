@@ -3,7 +3,8 @@
 //   /api/base|red|tierra|red-cercanias → R2 static/*.json (written daily by the GitHub Action)
 //   /api/export/info, /api/export      → R2 exports/* (monthly CSV files, written daily)
 //   anything else          → Supabase Edge Function "api"
-// Bindings / variables (Pages → Settings): R2 bucket binding LIVE, SUPABASE_URL, SUPABASE_ANON_KEY.
+// Bindings / variables (Pages → Settings): R2 bucket binding LIVE, variable SUPABASE_URL (not secret; the
+// Supabase "api" function is public and read-only, so no key is needed).
 // Only streams bytes, so it stays within the free plan's 10 ms CPU per request.
 
 const STATIC = { base: "static/base.json", red: "static/red.json", tierra: "static/tierra.json", "red-cercanias": "static/red-cercanias.json" };
@@ -56,21 +57,13 @@ export async function onRequest({ request, env, params }) {
   const path = (params.path || []).join("/");
   if (request.method !== "GET" && request.method !== "HEAD") return err(405, "Solo lectura");
 
-  if (path === "estado") return fromR2(env, "live/estado.json", "public, max-age=20", async () => {
-    // fallback: the same snapshot from Postgres (costs Supabase egress, so only when R2 is empty)
-    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/live_state?id=eq.1&select=payload`, { headers: { apikey: env.SUPABASE_ANON_KEY, Authorization: `Bearer ${env.SUPABASE_ANON_KEY}` } });
-    const rows = r.ok ? await r.json() : [];
-    return rows[0] ? new Response(JSON.stringify(rows[0].payload), { headers: headers("application/json; charset=utf-8", "public, max-age=20") }) : err(503, "Datos aún no disponibles");
-  });
+  if (path === "estado") return fromR2(env, "live/estado.json", "public, max-age=20");
   if (STATIC[path]) return fromR2(env, STATIC[path], "public, max-age=3600");
   if (path === "export/info") return fromR2(env, "exports/index.json", "public, max-age=600");
   if (path === "export") return exportCsv(env, url);
 
   // everything else → Supabase Edge Function "api"
   if (!env.SUPABASE_URL) return err(500, "Falta SUPABASE_URL");
-  const r = await fetch(`${env.SUPABASE_URL}/functions/v1/api/${path}${url.search}`, {
-    headers: { Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`, apikey: env.SUPABASE_ANON_KEY },
-    cf: { cacheTtl: 20, cacheEverything: false },
-  });
+  const r = await fetch(`${env.SUPABASE_URL}/functions/v1/api/${path}${url.search}`, { cf: { cacheTtl: 20, cacheEverything: false } });
   return new Response(r.body, { status: r.status, headers: { ...headers(r.headers.get("Content-Type") || "application/json", r.headers.get("Cache-Control") || "no-store") } });
 }

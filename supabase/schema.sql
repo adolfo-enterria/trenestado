@@ -419,11 +419,12 @@ grant execute on function public.station_timetable(text, text, integer, integer)
 select cron.unschedule(jobid) from cron.job where jobname = 'trenestado-maintenance';
 select cron.schedule('trenestado-maintenance', '15 2 * * *', $$select public.maintenance()$$);
 
--- After deploying the "collector" Edge Function (docs/deploy.md), store the project URL and the collector's
--- shared secret (the CRON_SECRET you set as a function secret) in Vault, then schedule it every minute:
+-- After deploying the "collector" Edge Function (docs/deploy.md), store the project URL in Vault, generate the
+-- collector's shared secret inside the database (the function reads it from Vault too, so nobody copies it),
+-- then schedule the collector every minute:
 --
 --   select vault.create_secret('https://<project-ref>.supabase.co', 'project_url');
---   select vault.create_secret('<same value as the CRON_SECRET function secret>', 'cron_secret');
+--   select vault.create_secret(encode(extensions.gen_random_bytes(24), 'hex'), 'cron_secret');
 --
 --   select cron.schedule('trenestado-collector', '* * * * *', $$
 --     select net.http_post(

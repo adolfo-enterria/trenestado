@@ -359,10 +359,17 @@ async function snapshot(st: Map<string, Station>, trains: Map<string, Live>, pro
   };
 }
 
-// Only Supabase Cron may run this (it sends the shared secret); otherwise anyone could burn invocations.
-const SECRET = Deno.env.get("CRON_SECRET");
+// Only Supabase Cron may run this; otherwise anyone could burn invocations. The shared secret is generated
+// inside the database (Vault, see supabase/schema.sql) and read from there: nobody has to copy it around.
+let secret: string | null = null;
+async function cronSecret() {
+  secret ??= Deno.env.get("CRON_SECRET") ||
+    (await sql`select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret'`)[0]?.decrypted_secret || null;
+  return secret;
+}
 Deno.serve(async (req) => {
-  if (!SECRET || req.headers.get("x-cron-secret") !== SECRET) return json({ error: "No autorizado" }, 401);
+  const s = await cronSecret().catch(() => null);
+  if (!s || req.headers.get("x-cron-secret") !== s) return json({ error: "No autorizado" }, 401);
   try { return json(await run()); }
   catch (e) { console.error(e); return json({ error: String((e as Error)?.message || e) }, 500); }
 });
