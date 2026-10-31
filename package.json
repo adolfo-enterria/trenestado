@@ -1,0 +1,25 @@
+{
+  "name": "trenestado",
+  "version": "1.0.0",
+  "description": "Trenes de Renfe en tiempo real: mapa, retrasos, incidencias, estadísticas y alarmas",
+  "main": "server/index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "start": "node --no-warnings server/index.js",
+    "dev": "node --no-warnings --watch server/index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "adm-zip": "^0.6.1",
+    "chart.js": "^4.6.1",
+    "es-atlas": "^0.6.0",
+    "express": "^5.3.0",
+    "leaflet": "^1.9.4",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2"
+  }
+}
