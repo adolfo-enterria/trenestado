@@ -16,6 +16,10 @@ on:
         type: boolean
         default: false
 
+# the job only reads the repository; this caps GITHUB_TOKEN whatever the repository default is
+permissions:
+  contents: read
+
 concurrency:
   group: daily-sync
   cancel-in-progress: false
@@ -38,4 +42,7 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
-        run: node --no-warnings scripts/sync-supabase.mjs ${{ inputs.steps }} ${{ inputs.all_months && '--all-months' || '' }}
+          # inputs go through env so the shell never runs them as code; $STEPS unquoted so "gtfs static" splits
+          STEPS: ${{ inputs.steps }}
+          ALL_MONTHS: ${{ inputs.all_months && '--all-months' || '' }}
+        run: node --no-warnings scripts/sync-supabase.mjs $STEPS $ALL_MONTHS
