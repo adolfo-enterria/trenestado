@@ -336,28 +336,37 @@ async function fuentes() {
 }
 
 // ---------------------------------------------------------------------------------------------------
+// Seconds each route may be cached (browser and the Cloudflare Pages Function) when the handler doesn't set
+// its own Cache-Control. The collector writes once a minute, so nothing here is fresher than that anyway.
+const TTL: Record<string, number> = { tren: 20, estacion: 30, buscar: 300, stats: 60, puntualidad: 300, incidencias: 30, fuentes: 30 };
+
+async function route(parts: string[], q: URLSearchParams) {
+  switch (parts[0]) {
+    case "tren": return await tren(parts[1] || "");
+    case "estacion": return await estacion(parts[1] || "", q.get("tipo") || "salidas");
+    case "buscar": return await buscar(q.get("q") || "");
+    case "stats": {
+      const w = q.get("w") && WINDOWS[q.get("w")!] !== undefined ? q.get("w")! : "1D";
+      const types = String(q.get("tipos") || "").split(",").filter((t) => TYPES.some((x) => x.id === t && !x.noData));
+      const region = REGIONS.includes(q.get("region") || "") ? q.get("region") : null;
+      return await stats(w, types, region);
+    }
+    case "puntualidad": { const { network, n } = parseId(parts[1] || ""); return json(await punctuality(network, n), 200, "public, max-age=300"); }
+    case "incidencias": return await incidencias();
+    case "fuentes": return await fuentes();
+    default: return json({ error: "Ruta desconocida" }, 404);
+  }
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const parts = url.pathname.replace(/^\/(functions\/v1\/)?api\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
-  const q = url.searchParams;
   try {
-    switch (parts[0]) {
-      case "tren": return await tren(parts[1] || "");
-      case "estacion": return await estacion(parts[1] || "", q.get("tipo") || "salidas");
-      case "buscar": return await buscar(q.get("q") || "");
-      case "stats": {
-        const w = q.get("w") && WINDOWS[q.get("w")!] !== undefined ? q.get("w")! : "1D";
-        const types = String(q.get("tipos") || "").split(",").filter((t) => TYPES.some((x) => x.id === t && !x.noData));
-        const region = REGIONS.includes(q.get("region") || "") ? q.get("region") : null;
-        return await stats(w, types, region);
-      }
-      case "puntualidad": { const { network, n } = parseId(parts[1] || ""); return json(await punctuality(network, n), 200, "public, max-age=300"); }
-      case "incidencias": return await incidencias();
-      case "fuentes": return await fuentes();
-      default: return json({ error: "Ruta desconocida" }, 404);
-    }
+    const res = await route(parts, url.searchParams);
+    if (res.status === 200 && res.headers.get("Cache-Control") === "no-store" && TTL[parts[0]]) res.headers.set("Cache-Control", `public, max-age=${TTL[parts[0]]}`);
+    return res;
   } catch (e) {
-    console.error(parts.join("/"), e);
-    return json({ error: String((e as Error)?.message || e) }, 500);
+    console.error(parts.join("/"), e); // detail stays in the logs; clients get a generic message
+    return json({ error: "Error interno" }, 500);
   }
 });
