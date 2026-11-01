@@ -53,3 +53,34 @@ because a free quota runs out:
   Cloudflare): have the Pages Function send a shared `x-proxy-secret` header and make the `api` Edge
   Function reject requests without it.
 - **Pin the GitHub Actions** in `.github/workflows/daily.yml` to commit SHAs instead of `@v4` tags.
+
+## Features
+
+### Renfe and Adif phone numbers, and donations for Urda and Adamuz
+
+On the **Incidencias** page (`public/js/incidents.js`), a small "Teléfonos y ayuda" block with:
+
+- Renfe and Adif phone numbers (customer service, and the incident or emergency line if there is one).
+  Take them from renfe.com and adif.es and check them before publishing; don't copy them from third-party
+  sites.
+- A button to donate to the families and people affected by the Urda and Adamuz accidents. It must point
+  to an official or verified channel (local council, Red Cross, an association of those affected…), never a
+  personal account. Add the date it was checked, and remove it when the campaign closes.
+
+### Favourite trains, highlighted on the map
+
+- A ☆ button on the train page (`public/js/train.js`) and in the map's train panel to mark a train as
+  favourite, stored in `localStorage` like the alarms (`store` in `public/js/util.js`, next to
+  `getTracked()` in `public/js/alarms.js`).
+- On the map (`public/js/map.js`), favourite trains and trains with an alarm get a distinct colour or
+  outline (on top of the delay colour, so the delay still reads) and are drawn above the others. Check that
+  it works in light and dark themes and is distinguishable for colour-blind users (e.g. a ring, not only a
+  colour).
+- **Mis trenes** lists favourites as well as alarms.
+
+### Table with all trains
+
+A new menu section (e.g. `#/trenes`) with every train running now, as a table: number, type, line or
+route, origin → destination, delay, current/next station, speed. Built from `/api/estado`, which the app
+already polls, so it costs no extra requests. Sortable columns, filters by type and zone like the map, a
+search box, and each row linking to `#/tren/<id>`.
