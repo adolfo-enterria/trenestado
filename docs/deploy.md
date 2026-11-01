@@ -14,10 +14,18 @@ Browser ─► Cloudflare Pages (public/) ─► functions/api/[[path]].js ─�
 1. Create a project at https://supabase.com (Free). Region: Europe (Frankfurt or Paris). Save the
    database password somewhere safe.
 2. **SQL Editor → New query** → paste all of `supabase/schema.sql` → **Run**. It's re-runnable.
+   Then give the daily job's role a password (letters and digits only, long; don't save it in any file):
+   ```sql
+   alter role trenestado_sync password '<new password>';
+   ```
 3. Note from **Project Settings**:
    - Project ref (the `xxxx` in `https://xxxx.supabase.co`)
    - **API keys**: the publishable/anon key (public, read-only thanks to RLS)
-   - **Database → Connection string → Session pooler** URI (for GitHub Actions; contains the password)
+   - **Database → Connection string → Session pooler** URI. For GitHub Actions, replace the user
+     `postgres.<project-ref>` with `trenestado_sync.<project-ref>` and the password with the one above.
+     The daily job then can't touch anything but the timetable tables (`docs/security.md` §2).
+4. **Project Settings → Data API**: turn it off. Nothing uses it (the site reads through Cloudflare and
+   the Edge Functions), and leaving it on lets anyone bulk-read the tables directly.
 
 ## 2. Cloudflare R2 (storage for the live snapshot, static data and downloads)
 
@@ -60,7 +68,7 @@ Repository → **Settings → Secrets and variables → Actions → New reposito
 
 | Secret | Value |
 |---|---|
-| `DATABASE_URL` | Supabase session pooler URI (with the password) |
+| `DATABASE_URL` | Supabase session pooler URI as `trenestado_sync.<project-ref>` (see step 1.3) |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | from step 2 |
 | `R2_BUCKET` | `trenestado` |
 
@@ -75,7 +83,9 @@ collector has no stations). It runs by itself every night at 03:30 UTC.
 3. **Settings → Bindings → R2 bucket**: variable name **`LIVE`**, bucket `trenestado`.
 4. **Settings → Variables**: `SUPABASE_URL` = `https://<project-ref>.supabase.co` (no key needed: the
    Supabase "api" function is public and read-only).
-5. Redeploy. The site is at `https://<project>.pages.dev`.
+5. **Settings → Builds & deployments → Preview branch control**: *None* (previews aren't needed, and they'd
+   run with their own bindings).
+6. Redeploy. The site is at `https://<project>.pages.dev`.
 
 The frontend loads `/vendor/leaflet/…`, `/vendor/chart.js/…`, `/vendor/maplibre-gl/…` and
 `/vendor/maplibre-gl-leaflet/…`, which the local server serves from `node_modules`. For Pages, copy them into
@@ -84,5 +94,6 @@ The frontend loads `/vendor/leaflet/…`, `/vendor/chart.js/…`, `/vendor/mapli
 ## Checking it works
 
 - Supabase → **Edge Functions → collector → Logs**: one call per minute, `{"trains": …}`.
-- `https://<project>.pages.dev/api/estado` returns JSON with `trenes`.
+- `https://<project>.pages.dev/api/estado` returns JSON with `trenes`. Request it twice: the second response
+  should have the header `X-Trenestado-Cache: hit`.
 - `https://<project>.pages.dev/api/fuentes` shows each source's status.
