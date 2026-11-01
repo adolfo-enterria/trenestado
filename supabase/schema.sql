@@ -4,9 +4,10 @@
 -- Safe to re-run: everything is "if not exists" / "or replace".
 --
 -- Architecture (docs/free-tier.md):
---   Edge Function "collector" (every minute, Supabase Cron) → writes here with the service_role key
---   Edge Function "gtfs" (daily) → refreshes the gtfs_* timetable tables
---   Browser → reads with the anon key; Row Level Security allows SELECT only
+--   Edge Function "collector" (every minute, Supabase Cron) → writes here (SUPABASE_DB_URL)
+--   GitHub Action "daily-sync" → refreshes the gtfs_* timetable tables as role trenestado_sync
+--   Browser → Cloudflare Pages Function → R2 or Edge Function "api" (reads with SUPABASE_DB_URL).
+--   The Data API (PostgREST) isn't used and should be off; the anon read policies below are a fallback.
 --
 -- Size budget on the 500 MB free database (docs/free-tier.md §4):
 --   train_runs LD ~100 MB/year (kept 2 years) · Cercanías ~70 MB steady (kept 90 days)
@@ -294,6 +295,38 @@ begin
   end loop;
 end $$;
 alter table public.meta enable row level security;            -- no policy: internal only
+
+-- -------------------------------------------------------------------------------------
+-- Role for the daily GitHub Action (scripts/sync-supabase.mjs), so DATABASE_URL isn't the postgres
+-- superuser: it reads everything (exports) and writes only the tables the job rebuilds. Created without
+-- a password; set one in the SQL editor (never in this file):
+--   alter role trenestado_sync password '<long random letters and digits>';
+-- and use user trenestado_sync.<project-ref> in the session pooler URI (docs/deploy.md §4).
+-- -------------------------------------------------------------------------------------
+do $$
+declare t text;
+begin
+  if not exists (select 1 from pg_roles where rolname = 'trenestado_sync') then
+    create role trenestado_sync login;
+  end if;
+  grant usage on schema public to trenestado_sync;
+  grant usage on all sequences in schema public to trenestado_sync;
+  for t in select tablename from pg_tables where schemaname = 'public' loop
+    execute format('grant select on public.%I to trenestado_sync', t);
+    if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = t and policyname = 'sync read') then
+      execute format('create policy "sync read" on public.%I for select to trenestado_sync using (true)', t);
+    end if;
+  end loop;
+  foreach t in array array[
+    'stations', 'gtfs_calendar', 'gtfs_calendar_dates', 'gtfs_trips', 'gtfs_shapes', 'gtfs_stop_times', 'cercanias_lines',
+    'scheduled_days', 'places', 'rail_pairs', 'meta', 'source_status'
+  ] loop
+    execute format('grant insert, update, delete, truncate on public.%I to trenestado_sync', t);
+    if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = t and policyname = 'sync write') then
+      execute format('create policy "sync write" on public.%I for all to trenestado_sync using (true) with check (true)', t);
+    end if;
+  end loop;
+end $$;
 
 -- -------------------------------------------------------------------------------------
 -- Functions
