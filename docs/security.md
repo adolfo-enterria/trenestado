@@ -24,19 +24,19 @@ Severity is for this project (a free, read-only public site), not in absolute te
 
 | # | Finding | Verified | Severity | Status |
 |---|---|---|---|---|
-| 1 | Uncached `/api/*` lets anyone burn the free quotas (and R2 reads cost money past the free tier) | Yes, with a correction | **Medium** | Code done; check cache hits after deploy; billing alert (you) |
-| 2 | Daily job connects to Postgres as `postgres` | Yes | Medium | Role in `schema.sql`; switch `DATABASE_URL` (you) |
+| 1 | Uncached `/api/*` lets anyone burn the free quotas (and R2 reads cost money past the free tier) | Yes, with a correction | **Medium** | Fixed: edge cache confirmed working on `pages.dev`; R2 Class B usage alert at 8 M |
+| 2 | Daily job connects to Postgres as `postgres` | Yes | Medium | Fixed: `DATABASE_URL` uses `trenestado_sync` (daily-sync green 2026-11-01) |
 | 3 | `supabase/.temp/` is committed | Yes | Info | Fixed |
-| 4 | Collaborators with write access can read the secrets | Yes | Medium (only if you add collaborators) | GitHub settings (you) |
+| 4 | Collaborators with write access can read the secrets | Yes | Medium (only if you add collaborators) | Fixed: fork PR approval for all outside contributors; ruleset blocks force push/deletion of `main` |
 | 5 | `${{ inputs.steps }}` interpolated into `run:` | Yes | Low | Fixed |
 | 6 | Station names in Leaflet tooltips not escaped (`train.js:164`) | Yes, with a correction | Low | Fixed |
-| 7 | Personal e-mail in commit metadata | Yes (all 6 commits) | Privacy | New commits use the noreply address; old ones kept |
-| 8 | Supabase Data API (PostgREST) is enabled but unused | New | Low | Turn off in Supabase (you) |
+| 7 | Personal e-mail in commit metadata | Yes (all 6 commits) | Privacy | Accepted (owner doesn't mind) |
+| 8 | Supabase Data API (PostgREST) is enabled but unused | New | Low | Fixed: Data API off |
 | 9 | API returns raw error messages | New | Low | Fixed (500s) |
 | 10 | ~~`/api/estacion` calls Renfe on every request~~ | No — already cached | – | Not an issue |
-| 11 | Workflow has no explicit `permissions:` and actions aren't pinned | New | Low | `permissions` fixed; pinning skipped |
-| 12 | Cloudflare Pages preview deployments | New | Check | Cloudflare setting (you) |
-| 13 | Account security (2FA, alerts, scanning) | New | **High impact** if missed | Checklist (you) |
+| 11 | Workflow has no explicit `permissions:` and actions aren't pinned | New | Low | `permissions` fixed; Dependabot alerts on; pinning skipped |
+| 12 | Cloudflare Pages preview deployments | New | Check | Fixed: preview branch deployments off |
+| 13 | Account security (2FA, alerts, scanning) | New | **High impact** if missed | Secret scanning + push protection on; 2FA to check (you) |
 
 ---
 
@@ -266,10 +266,10 @@ and more. Check:
 
 - [ ] **2FA** on GitHub, Supabase, Cloudflare and the e-mail account their password resets go to (an authenticator
       app or passkey, not SMS).
-- [ ] GitHub → Settings → Code security: **Secret scanning** and **Push protection** on (free for public
+- [x] GitHub → Settings → Code security: **Secret scanning** and **Push protection** on (free for public
       repos). Push protection blocks a push that contains a token.
-- [ ] Cloudflare billing notification (finding 1).
-- [ ] R2 bucket → Settings: **Public access** off (`r2.dev` URL disabled). The site reads it through the
+- [x] Cloudflare billing notification (finding 1): a spending alert plus a usage alert at 8 M R2 Class B reads.
+- [x] R2 bucket → Settings: **Public access** off (`r2.dev` URL disabled). The site reads it through the
       binding, so it doesn't need to be public.
 - [ ] Rotate the R2 secret that ended up in the collector logs — see `docs/to-do.md`.
 - [ ] Never paste secrets into issues, commits, chats or screenshots; when a secret appears somewhere it
