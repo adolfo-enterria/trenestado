@@ -161,11 +161,11 @@ function pintarMini(d, encuadrar) {
     // real track geometry from the server when available, otherwise straight lines between stops
     const linea = d.ruta?.length >= 2 ? d.ruta : pts;
     L.polyline(linea, { color: COL.texto2, weight: 3.5, opacity: 0.85, interactive: false }).addTo(miniLayers);
-    d.stops.filter((s) => s.lat).forEach((s) => L.circleMarker([s.lat, s.lon], { radius: s.estado === "siguiente" ? 5.5 : 4, color: s.estado === "siguiente" ? COL.acento : COL.halo, weight: s.estado === "siguiente" ? 2.5 : 1.2, fillColor: s.estado === "pasado" ? COL.texto2 : COL.panel, fillOpacity: 1 }).bindTooltip(`${s.n} ${s.est || s.arr || ""}`).addTo(miniLayers));
+    d.stops.filter((s) => s.lat).forEach((s) => L.circleMarker([s.lat, s.lon], { radius: s.estado === "siguiente" ? 5.5 : 4, color: s.estado === "siguiente" ? COL.acento : COL.halo, weight: s.estado === "siguiente" ? 2.5 : 1.2, fillColor: s.estado === "pasado" ? COL.texto2 : COL.panel, fillOpacity: 1 }).bindTooltip(`${esc(s.n)} ${esc(s.est || s.arr || "")}`).addTo(miniLayers));
   }
   if (d.live) {
     const g = nivel(d.delay) === "grave";
-    L.circleMarker([d.live.lat, d.live.lon], { radius: g ? 9 : 8, color: g ? COL.texto : COL.halo, weight: 2, fillColor: COL[nivel(d.delay)], fillOpacity: 1 }).bindTooltip(`${d.n} ${durTxt(d.delay)}`, { permanent: true, direction: "right" }).addTo(miniLayers);
+    L.circleMarker([d.live.lat, d.live.lon], { radius: g ? 9 : 8, color: g ? COL.texto : COL.halo, weight: 2, fillColor: COL[nivel(d.delay)], fillOpacity: 1 }).bindTooltip(`${esc(d.n)} ${durTxt(d.delay)}`, { permanent: true, direction: "right" }).addTo(miniLayers);
   }
   if (!encuadrar) return;
   const todo = d.ruta?.length >= 2 ? [...pts, ...d.ruta] : pts;
