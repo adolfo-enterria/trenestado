@@ -23,7 +23,7 @@ Browser ─► Cloudflare Pages (public/) ─► functions/api/[[path]].js ─�
    - **API keys**: the publishable/anon key (public, read-only thanks to RLS)
    - **Database → Connection string → Session pooler** URI. For GitHub Actions, replace the user
      `postgres.<project-ref>` with `trenestado_sync.<project-ref>` and the password with the one above.
-     The daily job then can't touch anything but the timetable tables (`docs/security.md` §2).
+     The daily job then can't touch anything but the timetable tables.
 4. **Project Settings → Data API**: turn it off. Nothing uses it (the site reads through Cloudflare and
    the Edge Functions), and leaving it on lets anyone bulk-read the tables directly.
 
